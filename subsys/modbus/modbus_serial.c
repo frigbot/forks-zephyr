@@ -224,6 +224,19 @@ static void modbus_ascii_tx_adu(struct modbus_context *ctx)
 	cfg->uart_buf_ctr = tx_bytes;
 	cfg->uart_buf_ptr = &cfg->uart_buf[0];
 
+	if (IS_ENABLED(CONFIG_MODBUS_EMULATED_7E1)) {
+		uint8_t parity;
+
+		for (int i = 0; i < tx_bytes; i++) {
+
+			// FIXME: this deserves a special Kconfig :/
+			cfg->uart_buf_ptr[i] = toupper(cfg->uart_buf_ptr[i]);
+
+			parity = __builtin_parity(cfg->uart_buf_ptr[i]);
+			cfg->uart_buf_ptr[i] |= (parity << 7);
+		}
+	}
+
 	LOG_DBG("Start frame transmission");
 	modbus_serial_rx_off(ctx);
 	modbus_serial_tx_on(ctx);
@@ -319,6 +332,16 @@ static void cb_handler_rx(struct modbus_context *ctx)
 		if (uart_fifo_read(cfg->dev, &c, 1) != 1) {
 			LOG_ERR("Failed to read UART");
 			return;
+		}
+
+		if (IS_ENABLED(CONFIG_MODBUS_EMULATED_7E1)) {
+			uint8_t parity = (c & BIT(7)) >> 7;
+
+			c &= ~(BIT(7));
+			if (parity != __builtin_parity(c)) {
+				LOG_WRN("parity error");
+				return;
+			}
 		}
 
 		if (c == MODBUS_ASCII_START_FRAME_CHAR) {
@@ -557,6 +580,19 @@ int modbus_serial_init(struct modbus_context *ctx,
 		default:
 			return -EINVAL;
 		}
+	}
+
+	/* If the UART driver lacks support for 7E1, we can emulate it by
+	 * shifting in the parity at BIT(7)
+	 */
+	if (IS_ENABLED(CONFIG_MODBUS_EMULATED_7E1) &&
+	    ctx->mode == MODBUS_MODE_ASCII) {
+		uart_cfg = (struct uart_config) {
+			.data_bits = UART_CFG_DATA_BITS_8,
+			.parity = UART_CFG_PARITY_NONE,
+			.stop_bits = UART_CFG_STOP_BITS_1,
+			.baudrate = param.serial.baud,
+		};
 	}
 
 	if (uart_configure(cfg->dev, &uart_cfg) != 0) {
