@@ -19,6 +19,7 @@
  *  Silicon Laboratories Inc. pursuant to the terms of the Apache License,
  *      Version 2.0 available at www.apache.org/licenses/LICENSE-2.0.
  */
+#include <ctype.h>
 
 #include <zephyr/logging/log.h>
 LOG_MODULE_REGISTER(modbus_serial, CONFIG_MODBUS_LOG_LEVEL);
