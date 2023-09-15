@@ -154,6 +154,50 @@ static int mbc_validate_rd_response(struct modbus_context *ctx,
 	return err;
 }
 
+static int mbc_validate_slave_id_response(struct modbus_context *ctx,
+				    const uint8_t unit_id,
+				    uint8_t fc,
+				    uint8_t *data,
+					uint16_t data_size)
+{
+	int err;
+//	size_t resp_byte_cnt;
+//	size_t req_byte_cnt;
+//	uint16_t req_qty;
+//	uint16_t req_addr;
+//	uint8_t *resp_data;
+//	uint16_t *data_p16 = (uint16_t *)data;
+
+	if (data == NULL) {
+		return -EINVAL;
+	}
+
+//	if ((resp_byte_cnt + 1) > sizeof(ctx->rx_adu.data)) {
+//		LOG_ERR("Byte count exceeds buffer length");
+//		return -EINVAL;
+//	}
+
+	switch (fc) {
+
+	case MODBUS_FC17_SLAVE_IDS_RD:
+		for (uint16_t i = 0; i < data_size; i++) {
+			data[i] = ctx->rx_adu.data[i];
+		}
+//@@@@@WK debug LOG_INF("Slave ID rx len=%02X %d",ctx->rx_adu.length, data_size);
+//@@@@@WK debug LOG_INF("%02X %02X %02X %02X %02X %02X %02X %02X ",data[0],data[1],data[2],data[3],data[4],data[5],data[6],data[7]);
+
+		err = 0;
+		break;
+
+	default:
+		LOG_ERR("Validation not implemented for FC 0x%02x", fc);
+		err = -ENOTSUP;
+	}
+
+	return err;
+}
+
+
 static int mbc_validate_fc08_response(struct modbus_context *ctx,
 				      const uint8_t unit_id,
 				      uint16_t *data)
@@ -242,7 +286,7 @@ static int mbc_validate_wr_response(struct modbus_context *ctx,
 }
 
 static int mbc_send_cmd(struct modbus_context *ctx, const uint8_t unit_id,
-			uint8_t fc, void *data)
+			uint8_t fc, void *data, uint16_t data_size)
 {
 	int err;
 
@@ -269,6 +313,9 @@ static int mbc_send_cmd(struct modbus_context *ctx, const uint8_t unit_id,
 	case MODBUS_FC03_HOLDING_REG_RD:
 	case MODBUS_FC04_IN_REG_RD:
 		err = mbc_validate_rd_response(ctx, unit_id, fc, data);
+		break;
+	case MODBUS_FC17_SLAVE_IDS_RD:
+		err = mbc_validate_slave_id_response(ctx, unit_id, fc, data, data_size);
 		break;
 
 	case MODBUS_FC08_DIAGNOSTICS:
@@ -309,7 +356,7 @@ int modbus_read_coils(const int iface,
 	sys_put_be16(start_addr, &ctx->tx_adu.data[0]);
 	sys_put_be16(num_coils, &ctx->tx_adu.data[2]);
 
-	err = mbc_send_cmd(ctx, unit_id, MODBUS_FC01_COIL_RD, coil_tbl);
+	err = mbc_send_cmd(ctx, unit_id, MODBUS_FC01_COIL_RD, coil_tbl, num_coils);
 	k_mutex_unlock(&ctx->iface_lock);
 
 	return err;
@@ -334,7 +381,7 @@ int modbus_read_dinputs(const int iface,
 	sys_put_be16(start_addr, &ctx->tx_adu.data[0]);
 	sys_put_be16(num_di, &ctx->tx_adu.data[2]);
 
-	err = mbc_send_cmd(ctx, unit_id, MODBUS_FC02_DI_RD, di_tbl);
+	err = mbc_send_cmd(ctx, unit_id, MODBUS_FC02_DI_RD, di_tbl, num_di);
 	k_mutex_unlock(&ctx->iface_lock);
 
 	return err;
@@ -359,7 +406,30 @@ int modbus_read_holding_regs(const int iface,
 	sys_put_be16(start_addr, &ctx->tx_adu.data[0]);
 	sys_put_be16(num_regs, &ctx->tx_adu.data[2]);
 
-	err = mbc_send_cmd(ctx, unit_id, MODBUS_FC03_HOLDING_REG_RD, reg_buf);
+	err = mbc_send_cmd(ctx, unit_id, MODBUS_FC03_HOLDING_REG_RD, reg_buf, num_regs);
+	k_mutex_unlock(&ctx->iface_lock);
+
+	return err;
+}
+
+int modbus_read_slave_id(const int iface,
+			     const uint8_t unit_id,
+			     const uint16_t start_addr,
+			     uint8_t *const reg_buf,
+			     const uint16_t reg_size)
+{
+	struct modbus_context *ctx = modbus_get_context(iface);
+	int err;
+
+	if (ctx == NULL) {
+		return -ENODEV;
+	}
+
+	k_mutex_lock(&ctx->iface_lock, K_FOREVER);
+
+	ctx->tx_adu.length = 0;
+
+	err = mbc_send_cmd(ctx, unit_id, MODBUS_FC17_SLAVE_IDS_RD, reg_buf, reg_size);
 	k_mutex_unlock(&ctx->iface_lock);
 
 	return err;
@@ -386,7 +456,7 @@ int modbus_read_holding_regs_fp(const int iface,
 	sys_put_be16(start_addr, &ctx->tx_adu.data[0]);
 	sys_put_be16(num_regs, &ctx->tx_adu.data[2]);
 
-	err = mbc_send_cmd(ctx, unit_id, MODBUS_FC03_HOLDING_REG_RD, reg_buf);
+	err = mbc_send_cmd(ctx, unit_id, MODBUS_FC03_HOLDING_REG_RD, reg_buf, num_regs);
 	k_mutex_unlock(&ctx->iface_lock);
 
 	return err;
@@ -412,7 +482,7 @@ int modbus_read_input_regs(const int iface,
 	sys_put_be16(start_addr, &ctx->tx_adu.data[0]);
 	sys_put_be16(num_regs, &ctx->tx_adu.data[2]);
 
-	err = mbc_send_cmd(ctx, unit_id, 4, reg_buf);
+	err = mbc_send_cmd(ctx, unit_id, 4, reg_buf, num_regs);
 	k_mutex_unlock(&ctx->iface_lock);
 
 	return err;
@@ -443,7 +513,7 @@ int modbus_write_coil(const int iface,
 	sys_put_be16(coil_addr, &ctx->tx_adu.data[0]);
 	sys_put_be16(coil_val, &ctx->tx_adu.data[2]);
 
-	err = mbc_send_cmd(ctx, unit_id, MODBUS_FC05_COIL_WR, NULL);
+	err = mbc_send_cmd(ctx, unit_id, MODBUS_FC05_COIL_WR, NULL, 0);
 	k_mutex_unlock(&ctx->iface_lock);
 
 	return err;
@@ -467,7 +537,7 @@ int modbus_write_holding_reg(const int iface,
 	sys_put_be16(start_addr, &ctx->tx_adu.data[0]);
 	sys_put_be16(reg_val, &ctx->tx_adu.data[2]);
 
-	err = mbc_send_cmd(ctx, unit_id, MODBUS_FC06_HOLDING_REG_WR, NULL);
+	err = mbc_send_cmd(ctx, unit_id, MODBUS_FC06_HOLDING_REG_WR, NULL, 0);
 	k_mutex_unlock(&ctx->iface_lock);
 
 	return err;
@@ -492,7 +562,7 @@ int modbus_request_diagnostic(const int iface,
 	sys_put_be16(sfunc, &ctx->tx_adu.data[0]);
 	sys_put_be16(data, &ctx->tx_adu.data[2]);
 
-	err = mbc_send_cmd(ctx, unit_id, MODBUS_FC08_DIAGNOSTICS, data_out);
+	err = mbc_send_cmd(ctx, unit_id, MODBUS_FC08_DIAGNOSTICS, data_out, 0);
 	k_mutex_unlock(&ctx->iface_lock);
 
 	return err;
@@ -536,7 +606,7 @@ int modbus_write_coils(const int iface,
 
 	memcpy(data_ptr, coil_tbl, num_bytes);
 
-	err = mbc_send_cmd(ctx, unit_id, MODBUS_FC15_COILS_WR, NULL);
+	err = mbc_send_cmd(ctx, unit_id, MODBUS_FC15_COILS_WR, NULL, 0);
 	k_mutex_unlock(&ctx->iface_lock);
 
 	return err;
@@ -583,7 +653,7 @@ int modbus_write_holding_regs(const int iface,
 		data_ptr += sizeof(uint16_t);
 	}
 
-	err = mbc_send_cmd(ctx, unit_id, MODBUS_FC16_HOLDING_REGS_WR, NULL);
+	err = mbc_send_cmd(ctx, unit_id, MODBUS_FC16_HOLDING_REGS_WR, NULL, 0);
 	k_mutex_unlock(&ctx->iface_lock);
 
 	return err;
@@ -634,7 +704,7 @@ int modbus_write_holding_regs_fp(const int iface,
 		data_ptr += sizeof(uint32_t);
 	}
 
-	err = mbc_send_cmd(ctx, unit_id, MODBUS_FC16_HOLDING_REGS_WR, NULL);
+	err = mbc_send_cmd(ctx, unit_id, MODBUS_FC16_HOLDING_REGS_WR, NULL, 0);
 	k_mutex_unlock(&ctx->iface_lock);
 
 	return err;

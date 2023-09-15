@@ -284,6 +284,27 @@ int modbus_write_holding_regs(const int iface,
 			      uint16_t *const reg_buf,
 			      const uint16_t num_regs);
 
+
+/**
+ * @brief Read slave if (FC17)
+ *
+ * Sends a Modbus message to read slave id registers
+ * to a server unit.
+ *
+ * @param iface      Modbus interface index
+ * @param unit_id    Modbus unit ID of the server
+ * @param reg_buf    Is a pointer to an array containing
+ *                   where the slave id values will be stored.
+ * @param num_regs   Quantity of bytes to read
+ *
+ * @retval           0 If the function was successful
+ */
+int modbus_read_slave_id(const int iface,
+			     const uint8_t unit_id,
+			     const uint16_t start_addr,
+			     uint8_t *const reg_buf,
+			     const uint16_t num_regs);
+
 /**
  * @brief Read floating-point holding registers (FC03)
  *
