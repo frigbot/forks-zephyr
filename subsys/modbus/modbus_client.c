@@ -161,21 +161,10 @@ static int mbc_validate_slave_id_response(struct modbus_context *ctx,
 					uint16_t data_size)
 {
 	int err;
-//	size_t resp_byte_cnt;
-//	size_t req_byte_cnt;
-//	uint16_t req_qty;
-//	uint16_t req_addr;
-//	uint8_t *resp_data;
-//	uint16_t *data_p16 = (uint16_t *)data;
 
 	if (data == NULL) {
 		return -EINVAL;
 	}
-
-//	if ((resp_byte_cnt + 1) > sizeof(ctx->rx_adu.data)) {
-//		LOG_ERR("Byte count exceeds buffer length");
-//		return -EINVAL;
-//	}
 
 	switch (fc) {
 
@@ -183,8 +172,10 @@ static int mbc_validate_slave_id_response(struct modbus_context *ctx,
 		for (uint16_t i = 0; i < data_size; i++) {
 			data[i] = ctx->rx_adu.data[i];
 		}
-//@@@@@WK debug LOG_INF("Slave ID rx len=%02X %d",ctx->rx_adu.length, data_size);
-//@@@@@WK debug LOG_INF("%02X %02X %02X %02X %02X %02X %02X %02X ",data[0],data[1],data[2],data[3],data[4],data[5],data[6],data[7]);
+/* @@@@@ WK Additional debug  for debugging Slave ID
+		LOG_INF("Slave ID rx len=%02X %d",ctx->rx_adu.length, data_size);
+		LOG_INF("%02X %02X %02X %02X %02X %02X %02X %02X ",data[0],data[1],data[2],data[3],data[4],data[5],data[6],data[7]);
+*/
 
 		err = 0;
 		break;
