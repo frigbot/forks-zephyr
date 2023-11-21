@@ -288,6 +288,8 @@ static int modbus_rtu_rx_adu(struct modbus_context *ctx)
 		return -EIO;
 	}
 
+	LOG_HEXDUMP_DBG(cfg->uart_buf, cfg->uart_buf_ctr, "RX");
+
 	return 0;
 }
 
@@ -312,8 +314,7 @@ static void rtu_tx_adu(struct modbus_context *ctx)
 	cfg->uart_buf_ctr = tx_bytes;
 	cfg->uart_buf_ptr = &cfg->uart_buf[0];
 
-	LOG_HEXDUMP_DBG(cfg->uart_buf, cfg->uart_buf_ctr, "uart_buf");
-	LOG_DBG("Start frame transmission");
+	LOG_HEXDUMP_DBG(cfg->uart_buf, cfg->uart_buf_ctr, "TX");
 	modbus_serial_rx_off(ctx);
 	modbus_serial_tx_on(ctx);
 }
@@ -530,6 +531,7 @@ int modbus_serial_init(struct modbus_context *ctx,
 	const uint32_t if_delay_max = 3500000;
 	const uint32_t numof_bits = 11;
 	struct uart_config uart_cfg;
+	uint8_t tmp[1];
 
 	switch (param.mode) {
 	case MODBUS_MODE_RTU:
@@ -595,6 +597,8 @@ int modbus_serial_init(struct modbus_context *ctx,
 			.baudrate = param.serial.baud,
 		};
 	}
+	
+	modbus_serial_rx_off(ctx);
 
 	if (uart_configure(cfg->dev, &uart_cfg) != 0) {
 		LOG_ERR("Failed to configure UART");
@@ -619,8 +623,21 @@ int modbus_serial_init(struct modbus_context *ctx,
 	k_timer_init(&cfg->rtu_timer, rtu_tmr_handler, NULL);
 	k_timer_user_data_set(&cfg->rtu_timer, ctx);
 
-	modbus_serial_rx_on(ctx);
 	LOG_INF("RTU timeout %u us", cfg->rtu_timeout);
+	
+	LOG_WRN("RX UART FIF0 %d",uart_irq_rx_ready(cfg->dev));
+
+	if(uart_irq_rx_ready(cfg->dev))	
+	{				
+		int n = 0;
+		int c = 0;
+		do		
+		{
+			n= uart_fifo_read(cfg->dev,tmp, 1 );
+			c += n;
+		}while(n!= 0);
+		LOG_WRN("Flushed %d bytes",c);
+	}
 
 	return 0;
 }

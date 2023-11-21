@@ -144,7 +144,7 @@ int modbus_tx_wait_rx_adu(struct modbus_context *ctx)
 	modbus_tx_adu(ctx);
 
 	if (k_sem_take(&ctx->client_wait_sem, K_USEC(ctx->rxwait_to)) != 0) {
-		LOG_WRN("Client wait-for-RX timeout");
+		LOG_DBG("Client wait-for-RX timeout");
 		return -ETIMEDOUT;
 	}
 
@@ -270,7 +270,7 @@ int modbus_init_server(const int iface, struct modbus_iface_param param)
 		modbus_reset_stats(ctx);
 	}
 
-	LOG_DBG("Modbus interface %s initialized", ctx->iface_name);
+	LOG_WRN("Modbus interface %s initialized", ctx->iface_name);
 
 	return 0;
 
@@ -368,7 +368,7 @@ int modbus_disable(const uint8_t iface)
 	ctx->mbs_user_cb = NULL;
 	atomic_clear_bit(&ctx->state, MODBUS_STATE_CONFIGURED);
 
-	LOG_INF("Modbus interface %u disabled", iface);
+	LOG_DBG("Modbus interface %u disabled", iface);
 
 	return 0;
 }

@@ -932,7 +932,7 @@ bool modbus_server_handler(struct modbus_context *ctx)
 	uint8_t addr = ctx->rx_adu.unit_id;
 	uint8_t fc = ctx->rx_adu.fc;
 
-	LOG_DBG("Server RX handler %p", ctx);
+	LOG_WRN("Server RX handler %p", ctx);
 	update_msg_ctr(ctx);
 
 	if (ctx->rx_adu_err != 0) {
