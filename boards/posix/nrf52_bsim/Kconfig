@@ -8,14 +8,6 @@ if BOARD_NRF52_BSIM
 # must be read also from here.
 source "soc/arm/nordic_nrf/Kconfig.peripherals"
 
-comment "NRF52_BSIM options"
-
-config PRINTK_HOOK_INIT_PRIORITY
-	int
-	default 50
-	help
-	  Just the driver init priority
-
 endif # BOARD_NRF52_BSIM
 
 
@@ -34,3 +26,9 @@ config SOC_SERIES_BSIM_NRF52X
 	depends on SOC_SERIES_BSIM_NRFXX
 	help
 	  Any NRF52 simulated SOC with BabbleSim, based on the POSIX arch
+
+config SOC_SERIES_BSIM_NRF53X
+	bool
+	depends on SOC_SERIES_BSIM_NRFXX
+	help
+	  Any NRF53 simulated SOC with BabbleSim, based on the POSIX arch

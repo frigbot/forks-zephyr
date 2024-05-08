@@ -13,6 +13,11 @@
 #include <zephyr/sys/crc.h>
 #include "nvs_priv.h"
 
+#ifdef CONFIG_NVS_LOOKUP_CACHE_FOR_SETTINGS
+#include <zephyr/sys/util.h>
+#include <settings/settings_nvs.h>
+#endif
+
 #include <zephyr/logging/log.h>
 LOG_MODULE_REGISTER(fs_nvs, CONFIG_NVS_LOG_LEVEL);
 
@@ -21,24 +26,61 @@ static int nvs_ate_valid(struct nvs_fs *fs, const struct nvs_ate *entry);
 
 #ifdef CONFIG_NVS_LOOKUP_CACHE
 
+#ifdef CONFIG_NVS_LOOKUP_CACHE_FOR_SETTINGS
+
 static inline size_t nvs_lookup_cache_pos(uint16_t id)
 {
-	size_t pos;
-
-#if CONFIG_NVS_LOOKUP_CACHE_SIZE <= UINT8_MAX
 	/*
-	 * CRC8-CCITT is used for ATE checksums and it also acts well as a hash
-	 * function, so it can be a good choice from the code size perspective.
-	 * However, other hash functions can be used as well if proved better
-	 * performance.
+	 * 1. The NVS settings backend uses up to (NVS_NAME_ID_OFFSET - 1) NVS IDs to
+	      store keys and equal number of NVS IDs to store values.
+	 * 2. For each key-value pair, the value is stored at NVS ID greater by exactly
+	 *    NVS_NAME_ID_OFFSET than NVS ID that holds the key.
+	 * 3. The backend tries to minimize the range of NVS IDs used to store keys.
+	 *    That is, NVS IDs are allocated sequentially, and freed NVS IDs are reused
+	 *    before allocating new ones.
+	 *
+	 * Therefore, to assure the least number of collisions in the lookup cache,
+	 * the least significant bit of the hash indicates whether the given NVS ID
+	 * represents a key or a value, and remaining bits of the hash are set to
+	 * the ordinal number of the key-value pair. Consequently, the hash function
+	 * provides the following mapping:
+	 *
+	 * 1st settings key   => hash 0
+	 * 1st settings value => hash 1
+	 * 2nd settings key   => hash 2
+	 * 2nd settings value => hash 3
+	 * ...
 	 */
-	pos = crc8_ccitt(CRC8_CCITT_INITIAL_VALUE, &id, sizeof(id));
-#else
-	pos = crc16_ccitt(0xffff, (const uint8_t *)&id, sizeof(id));
-#endif
+	BUILD_ASSERT(IS_POWER_OF_TWO(NVS_NAMECNT_ID), "NVS_NAMECNT_ID is not power of 2");
+	BUILD_ASSERT(IS_POWER_OF_TWO(NVS_NAME_ID_OFFSET), "NVS_NAME_ID_OFFSET is not power of 2");
 
-	return pos % CONFIG_NVS_LOOKUP_CACHE_SIZE;
+	uint16_t key_value_bit;
+	uint16_t key_value_ord;
+
+	key_value_bit = (id >> LOG2(NVS_NAME_ID_OFFSET)) & 1;
+	key_value_ord = id & (NVS_NAME_ID_OFFSET - 1);
+
+	return ((key_value_ord << 1) | key_value_bit) % CONFIG_NVS_LOOKUP_CACHE_SIZE;
 }
+
+#else /* CONFIG_NVS_LOOKUP_CACHE_FOR_SETTINGS */
+
+static inline size_t nvs_lookup_cache_pos(uint16_t id)
+{
+	uint16_t hash;
+
+	/* 16-bit integer hash function found by https://github.com/skeeto/hash-prospector. */
+	hash = id;
+	hash ^= hash >> 8;
+	hash *= 0x88b5U;
+	hash ^= hash >> 7;
+	hash *= 0xdb2dU;
+	hash ^= hash >> 9;
+
+	return hash % CONFIG_NVS_LOOKUP_CACHE_SIZE;
+}
+
+#endif /* CONFIG_NVS_LOOKUP_CACHE_FOR_SETTINGS */
 
 static int nvs_lookup_cache_rebuild(struct nvs_fs *fs)
 {
@@ -539,7 +581,6 @@ static void nvs_sector_advance(struct nvs_fs *fs, uint32_t *addr)
  */
 static int nvs_sector_close(struct nvs_fs *fs)
 {
-	int rc;
 	struct nvs_ate close_ate;
 	size_t ate_size;
 
@@ -548,13 +589,14 @@ static int nvs_sector_close(struct nvs_fs *fs)
 	close_ate.id = 0xFFFF;
 	close_ate.len = 0U;
 	close_ate.offset = (uint16_t)((fs->ate_wra + ate_size) & ADDR_OFFS_MASK);
+	close_ate.part = 0xff;
 
 	fs->ate_wra &= ADDR_SECT_MASK;
 	fs->ate_wra += (fs->sector_size - ate_size);
 
 	nvs_ate_crc8_update(&close_ate);
 
-	rc = nvs_flash_ate_wrt(fs, &close_ate);
+	(void)nvs_flash_ate_wrt(fs, &close_ate);
 
 	nvs_sector_advance(fs, &fs->ate_wra);
 
@@ -570,6 +612,7 @@ static int nvs_add_gc_done_ate(struct nvs_fs *fs)
 	LOG_DBG("Adding gc done ate at %x", fs->ate_wra & ADDR_OFFS_MASK);
 	gc_done_ate.id = 0xffff;
 	gc_done_ate.len = 0U;
+	gc_done_ate.part = 0xff;
 	gc_done_ate.offset = (uint16_t)(fs->data_wra & ADDR_OFFS_MASK);
 	nvs_ate_crc8_update(&gc_done_ate);
 
@@ -629,7 +672,15 @@ static int nvs_gc(struct nvs_fs *fs)
 			continue;
 		}
 
+#ifdef CONFIG_NVS_LOOKUP_CACHE
+		wlk_addr = fs->lookup_cache[nvs_lookup_cache_pos(gc_ate.id)];
+
+		if (wlk_addr == NVS_LOOKUP_CACHE_NO_ADDR) {
+			wlk_addr = fs->ate_wra;
+		}
+#else
 		wlk_addr = fs->ate_wra;
+#endif
 		do {
 			wlk_prev_addr = wlk_addr;
 			rc = nvs_prev_ate(fs, &wlk_addr, &wlk_ate);
@@ -854,6 +905,16 @@ static int nvs_startup(struct nvs_fs *fs)
 		fs->ate_wra &= ADDR_SECT_MASK;
 		fs->ate_wra += (fs->sector_size - 2 * ate_size);
 		fs->data_wra = (fs->ate_wra & ADDR_SECT_MASK);
+#ifdef CONFIG_NVS_LOOKUP_CACHE
+		/**
+		 * At this point, the lookup cache wasn't built but the gc function need to use it.
+		 * So, temporarily, we set the lookup cache to the end of the fs.
+		 * The cache will be rebuilt afterwards
+		 **/
+		for (i = 0; i < CONFIG_NVS_LOOKUP_CACHE_SIZE; i++) {
+			fs->lookup_cache[i] = fs->ate_wra;
+		}
+#endif
 		rc = nvs_gc(fs);
 		goto end;
 	}
@@ -887,11 +948,13 @@ static int nvs_startup(struct nvs_fs *fs)
 		fs->data_wra = fs->ate_wra & ADDR_SECT_MASK;
 	}
 
-#ifdef CONFIG_NVS_LOOKUP_CACHE
-	rc = nvs_lookup_cache_rebuild(fs);
-#endif
-
 end:
+
+#ifdef CONFIG_NVS_LOOKUP_CACHE
+	if (!rc) {
+		rc = nvs_lookup_cache_rebuild(fs);
+	}
+#endif
 	/* If the sector is empty add a gc done ate to avoid having insufficient
 	 * space when doing gc.
 	 */
@@ -1014,7 +1077,15 @@ ssize_t nvs_write(struct nvs_fs *fs, uint16_t id, const void *data, size_t len)
 	}
 
 	/* find latest entry with same id */
+#ifdef CONFIG_NVS_LOOKUP_CACHE
+	wlk_addr = fs->lookup_cache[nvs_lookup_cache_pos(id)];
+
+	if (wlk_addr == NVS_LOOKUP_CACHE_NO_ADDR) {
+		goto no_cached_entry;
+	}
+#else
 	wlk_addr = fs->ate_wra;
+#endif
 	rd_addr = wlk_addr;
 
 	while (1) {
@@ -1031,6 +1102,10 @@ ssize_t nvs_write(struct nvs_fs *fs, uint16_t id, const void *data, size_t len)
 			break;
 		}
 	}
+
+#ifdef CONFIG_NVS_LOOKUP_CACHE
+no_cached_entry:
+#endif
 
 	if (prev_found) {
 		/* previous entry found */

@@ -284,7 +284,6 @@ int modbus_write_holding_regs(const int iface,
 			      uint16_t *const reg_buf,
 			      const uint16_t num_regs);
 
-
 /**
  * @brief Read slave if (FC17)
  *

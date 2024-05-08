@@ -66,6 +66,15 @@ void otPlatDiagRadioReceived(otInstance *aInstance,
 	ARG_UNUSED(aError);
 }
 
+otError otPlatDiagRadioTransmitCarrier(otInstance *aInstance, bool aEnable)
+{
+	if (!otPlatDiagModeGet()) {
+		return OT_ERROR_INVALID_STATE;
+	}
+
+	return platformRadioTransmitCarrier(aInstance, aEnable);
+}
+
 void otPlatDiagAlarmCallback(otInstance *aInstance)
 {
 	ARG_UNUSED(aInstance);

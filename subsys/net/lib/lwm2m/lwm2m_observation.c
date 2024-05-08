@@ -38,8 +38,6 @@ LOG_MODULE_REGISTER(LOG_MODULE_NAME);
 #include <zephyr/sys/printk.h>
 #include <zephyr/types.h>
 
-#include <fcntl.h>
-
 #if defined(CONFIG_LWM2M_RW_SENML_JSON_SUPPORT)
 #include "lwm2m_rw_senml_json.h"
 #endif
@@ -375,6 +373,7 @@ int lwm2m_notify_observer_path(const struct lwm2m_obj_path *path)
 				LOG_DBG("NOTIFY EVENT %u/%u/%u", path->obj_id, path->obj_inst_id,
 					path->res_id);
 				ret++;
+				lwm2m_engine_wake_up();
 			}
 		}
 	}
@@ -915,7 +914,7 @@ static int lwm2m_engine_observer_timestamp_update(sys_slist_t *observer,
 
 	/* update observe_node accordingly */
 	SYS_SLIST_FOR_EACH_CONTAINER(observer, obs, node) {
-		if (!obs->resource_update) {
+		if (obs->resource_update) {
 			/* Resource Update on going skip this*/
 			continue;
 		}

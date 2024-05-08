@@ -128,6 +128,10 @@ config USB_DEVICE_INITIALIZE_AT_BOOT
 
 config SHELL_BACKEND_SERIAL_CHECK_DTR
 	default SHELL
+	depends on UART_LINE_CTRL
+
+config UART_LINE_CTRL
+	default SHELL
 
 config USB_DEVICE_REMOTE_WAKEUP
 	default n
@@ -156,6 +160,7 @@ endif # BOARD_SERIAL_BACKEND_CDC_ACM
 # It is not necessary for nRF Connect SDK to add another instance if MCUBoot
 # bootloader is built as a child image.
 config MCUBOOT_USB_SUPPORT
+	bool
 	default n
 
 endif # BOARD_THINGY53_NRF5340_CPUAPP || BOARD_THINGY53_NRF5340_CPUAPP_NS

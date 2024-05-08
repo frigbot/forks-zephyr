@@ -239,6 +239,7 @@ static void modbus_ascii_tx_adu(struct modbus_context *ctx)
 	}
 
 	LOG_DBG("Start frame transmission");
+	LOG_HEXDUMP_DBG(cfg->uart_buf_ptr, cfg->uart_buf_ctr, "TX");
 	modbus_serial_rx_off(ctx);
 	modbus_serial_tx_on(ctx);
 }
@@ -625,7 +626,7 @@ int modbus_serial_init(struct modbus_context *ctx,
 
 	LOG_INF("RTU timeout %u us", cfg->rtu_timeout);
 	
-	LOG_WRN("RX UART FIF0 %d",uart_irq_rx_ready(cfg->dev));
+	LOG_DBG("RX UART FIF0 %d",uart_irq_rx_ready(cfg->dev));
 
 	if(uart_irq_rx_ready(cfg->dev))	
 	{				

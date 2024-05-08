@@ -602,7 +602,7 @@ done:
 		net_pkt_cursor_init(pkt);
 	}
 
-	k_mem_slab_free(pkt->slab, (void **)&pkt);
+	k_mem_slab_free(pkt->slab, (void *)pkt);
 }
 
 #if NET_LOG_LEVEL >= LOG_LEVEL_DBG
@@ -866,7 +866,7 @@ static struct net_buf *pkt_alloc_buffer(struct net_buf_pool *pool,
 					size_t size, k_timeout_t timeout)
 #endif
 {
-	uint64_t end = sys_clock_timeout_end_calc(timeout);
+	k_timepoint_t end = sys_timepoint_calc(timeout);
 	struct net_buf *first = NULL;
 	struct net_buf *current = NULL;
 
@@ -891,16 +891,7 @@ static struct net_buf *pkt_alloc_buffer(struct net_buf_pool *pool,
 
 		size -= current->size;
 
-		if (!K_TIMEOUT_EQ(timeout, K_NO_WAIT) &&
-		    !K_TIMEOUT_EQ(timeout, K_FOREVER)) {
-			int64_t remaining = end - sys_clock_tick_get();
-
-			if (remaining <= 0) {
-				break;
-			}
-
-			timeout = Z_TIMEOUT_TICKS(remaining);
-		}
+		timeout = sys_timepoint_timeout(end);
 
 #if CONFIG_NET_PKT_LOG_LEVEL >= LOG_LEVEL_DBG
 		NET_FRAG_CHECK_IF_NOT_IN_USE(new, new->ref + 1);
@@ -1147,7 +1138,6 @@ int net_pkt_alloc_buffer(struct net_pkt *pkt,
 			 k_timeout_t timeout)
 #endif
 {
-	uint64_t end = sys_clock_timeout_end_calc(timeout);
 	struct net_buf_pool *pool = NULL;
 	size_t alloc_len = 0;
 	size_t hdr_len = 0;
@@ -1186,17 +1176,6 @@ int net_pkt_alloc_buffer(struct net_pkt *pkt,
 		pool = pkt->slab == &tx_pkts ? &tx_bufs : &rx_bufs;
 	}
 
-	if (!K_TIMEOUT_EQ(timeout, K_NO_WAIT) &&
-	    !K_TIMEOUT_EQ(timeout, K_FOREVER)) {
-		int64_t remaining = end - sys_clock_tick_get();
-
-		if (remaining <= 0) {
-			timeout = K_NO_WAIT;
-		} else {
-			timeout = Z_TIMEOUT_TICKS(remaining);
-		}
-	}
-
 #if NET_LOG_LEVEL >= LOG_LEVEL_DBG
 	buf = pkt_alloc_buffer(pool, alloc_len, timeout, caller, line);
 #else
@@ -1214,6 +1193,67 @@ int net_pkt_alloc_buffer(struct net_pkt *pkt,
 	}
 
 	net_pkt_append_buffer(pkt, buf);
+
+	return 0;
+}
+
+
+#if NET_LOG_LEVEL >= LOG_LEVEL_DBG
+int net_pkt_alloc_buffer_raw_debug(struct net_pkt *pkt, size_t size,
+				   k_timeout_t timeout, const char *caller,
+				   int line)
+#else
+int net_pkt_alloc_buffer_raw(struct net_pkt *pkt, size_t size,
+			     k_timeout_t timeout)
+#endif
+{
+	struct net_buf_pool *pool = NULL;
+	struct net_buf *buf;
+
+	if (size == 0) {
+		return 0;
+	}
+
+	if (k_is_in_isr()) {
+		timeout = K_NO_WAIT;
+	}
+
+	NET_DBG("Data allocation size %zu", size);
+
+	if (pkt->context) {
+		pool = get_data_pool(pkt->context);
+	}
+
+	if (!pool) {
+		pool = pkt->slab == &tx_pkts ? &tx_bufs : &rx_bufs;
+	}
+
+#if NET_LOG_LEVEL >= LOG_LEVEL_DBG
+	buf = pkt_alloc_buffer(pool, size, timeout, caller, line);
+#else
+	buf = pkt_alloc_buffer(pool, size, timeout);
+#endif
+
+	if (!buf) {
+#if NET_LOG_LEVEL >= LOG_LEVEL_DBG
+		NET_ERR("Data buffer (%zd) allocation failed (%s:%d)",
+			size, caller, line);
+#else
+		NET_ERR("Data buffer (%zd) allocation failed.", size);
+#endif
+		return -ENOMEM;
+	}
+
+	net_pkt_append_buffer(pkt, buf);
+
+#if IS_ENABLED(CONFIG_NET_BUF_FIXED_DATA_SIZE)
+	/* net_buf allocators shrink the buffer size to the requested size.
+	 * We don't want this behavior here, so restore the real size of the
+	 * last fragment.
+	 */
+	buf = net_buf_frag_last(buf);
+	buf->size = CONFIG_NET_BUF_DATA_SIZE;
+#endif
 
 	return 0;
 }
@@ -1254,13 +1294,13 @@ static struct net_pkt *pkt_alloc(struct k_mem_slab *slab, k_timeout_t timeout)
 		net_pkt_set_ipv6_next_hdr(pkt, 255);
 	}
 
-#if IS_ENABLED(CONFIG_NET_TX_DEFAULT_PRIORITY)
+#if defined(CONFIG_NET_TX_DEFAULT_PRIORITY)
 #define TX_DEFAULT_PRIORITY CONFIG_NET_TX_DEFAULT_PRIORITY
 #else
 #define TX_DEFAULT_PRIORITY 0
 #endif
 
-#if IS_ENABLED(CONFIG_NET_RX_DEFAULT_PRIORITY)
+#if defined(CONFIG_NET_RX_DEFAULT_PRIORITY)
 #define RX_DEFAULT_PRIORITY CONFIG_NET_RX_DEFAULT_PRIORITY
 #else
 #define RX_DEFAULT_PRIORITY 0
@@ -1417,7 +1457,7 @@ pkt_alloc_with_buffer(struct k_mem_slab *slab,
 		      k_timeout_t timeout)
 #endif
 {
-	uint64_t end = sys_clock_timeout_end_calc(timeout);
+	k_timepoint_t end = sys_timepoint_calc(timeout);
 	struct net_pkt *pkt;
 	int ret;
 
@@ -1435,17 +1475,7 @@ pkt_alloc_with_buffer(struct k_mem_slab *slab,
 
 	net_pkt_set_family(pkt, family);
 
-	if (!K_TIMEOUT_EQ(timeout, K_NO_WAIT) &&
-	    !K_TIMEOUT_EQ(timeout, K_FOREVER)) {
-		int64_t remaining = end - sys_clock_tick_get();
-
-		if (remaining <= 0) {
-			timeout = K_NO_WAIT;
-		} else {
-			timeout = Z_TIMEOUT_TICKS(remaining);
-		}
-	}
-
+	timeout = sys_timepoint_timeout(end);
 #if NET_LOG_LEVEL >= LOG_LEVEL_DBG
 	ret = net_pkt_alloc_buffer_debug(pkt, size, proto, timeout,
 					 caller, line);
@@ -1623,7 +1653,7 @@ static int net_pkt_cursor_operate(struct net_pkt *pkt,
 			len = d_len;
 		}
 
-		if (copy) {
+		if (copy && data) {
 			memcpy(write ? c_op->pos : data,
 			       write ? data : c_op->pos,
 			       len);
@@ -1775,15 +1805,17 @@ int net_pkt_copy(struct net_pkt *pkt_dst,
 
 static int32_t net_pkt_find_offset(struct net_pkt *pkt, uint8_t *ptr)
 {
-	struct net_buf *buf = pkt->buffer;
+	struct net_buf *buf;
 	uint32_t ret = -EINVAL;
 	uint16_t offset;
 
-	if (!(ptr && pkt && buf)) {
+	if (!ptr || !pkt || !pkt->buffer) {
 		return ret;
 	}
 
 	offset = 0U;
+	buf = pkt->buffer;
+
 	while (buf) {
 		if (buf->data <= ptr && ptr <= (buf->data + buf->len)) {
 			ret = offset + (ptr - buf->data);

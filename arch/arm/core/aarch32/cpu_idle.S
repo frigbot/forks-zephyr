@@ -13,6 +13,10 @@
 #include <zephyr/toolchain.h>
 #include <zephyr/linker/sections.h>
 
+#if defined(CONFIG_ARM_ON_EXIT_CPU_IDLE)
+#include <soc_cpu_idle.h>
+#endif
+
 _ASM_FILE_PROLOGUE
 
 GTEXT(z_arm_cpu_idle_init)
@@ -64,6 +68,11 @@ SECTION_FUNC(TEXT, z_arm_cpu_idle_init)
 	dsb
 	\wait_instruction
 
+#if defined(CONFIG_ARM_ON_EXIT_CPU_IDLE)
+	/* Inline the macro provided by SoC-specific code */
+	SOC_ON_EXIT_CPU_IDLE
+#endif /* CONFIG_ARM_ON_EXIT_CPU_IDLE */
+
 #if defined(CONFIG_ARM_ON_ENTER_CPU_IDLE_HOOK)
 _skip_\@:
 #if defined(CONFIG_ARMV6_M_ARMV8_M_BASELINE)
@@ -76,16 +85,24 @@ _skip_\@:
 .endm
 
 SECTION_FUNC(TEXT, arch_cpu_idle)
-#ifdef CONFIG_TRACING
+#if defined(CONFIG_TRACING) || \
+    defined(CONFIG_ARM_ON_ENTER_CPU_IDLE_PREPARE_HOOK)
 	push	{r0, lr}
+
+#ifdef CONFIG_TRACING
 	bl	sys_trace_idle
+#endif
+#ifdef CONFIG_ARM_ON_ENTER_CPU_IDLE_PREPARE_HOOK
+	bl	z_arm_on_enter_cpu_idle_prepare
+#endif
+
 #if defined(CONFIG_ARMV6_M_ARMV8_M_BASELINE)
 	pop	{r0, r1}
 	mov	lr, r1
 #else
 	pop	{r0, lr}
 #endif /* CONFIG_ARMV6_M_ARMV8_M_BASELINE */
-#endif /* CONFIG_TRACING */
+#endif
 
 #if defined(CONFIG_ARMV7_M_ARMV8_M_MAINLINE)
 	/*
@@ -129,17 +146,24 @@ SECTION_FUNC(TEXT, arch_cpu_idle)
 	bx	lr
 
 SECTION_FUNC(TEXT, arch_cpu_atomic_idle)
-#ifdef CONFIG_TRACING
+#if defined(CONFIG_TRACING) || \
+    defined(CONFIG_ARM_ON_ENTER_CPU_IDLE_PREPARE_HOOK)
 	push	{r0, lr}
+
+#ifdef CONFIG_TRACING
 	bl	sys_trace_idle
+#endif
+#ifdef CONFIG_ARM_ON_ENTER_CPU_IDLE_PREPARE_HOOK
+	bl	z_arm_on_enter_cpu_idle_prepare
+#endif
+
 #if defined(CONFIG_ARMV6_M_ARMV8_M_BASELINE)
 	pop	{r0, r1}
 	mov	lr, r1
 #else
 	pop	{r0, lr}
 #endif /* CONFIG_ARMV6_M_ARMV8_M_BASELINE */
-#endif /* CONFIG_TRACING */
-
+#endif
 	/*
 	 * Lock PRIMASK while sleeping: wfe will still get interrupted by
 	 * incoming interrupts but the CPU will not service them right away.

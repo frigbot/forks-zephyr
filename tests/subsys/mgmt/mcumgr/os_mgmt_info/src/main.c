@@ -124,36 +124,40 @@ const uint8_t query_all[] = "a";
 const uint8_t query_test_cmd[] = "k";
 
 #ifdef CONFIG_MCUMGR_GRP_OS_INFO_CUSTOM_HOOKS
-static int32_t os_mgmt_info_custom_os_callback(uint32_t event, int32_t rc, bool *abort_more,
-					       void *data, size_t data_size)
+static enum mgmt_cb_return os_mgmt_info_custom_os_callback(uint32_t event,
+							   enum mgmt_cb_return prev_status,
+							   int32_t *rc, uint16_t *group,
+							   bool *abort_more, void *data,
+							   size_t data_size)
 {
 	if (event == MGMT_EVT_OP_OS_MGMT_INFO_CHECK) {
 		struct os_mgmt_info_check *check_data = (struct os_mgmt_info_check *)data;
 
 		*check_data->custom_os_name = true;
 	} else if (event == MGMT_EVT_OP_OS_MGMT_INFO_APPEND) {
-		int rc;
+		int int_rc;
 		struct os_mgmt_info_append *append_data = (struct os_mgmt_info_append *)data;
 
 		if (*append_data->format_bitmask & OS_MGMT_INFO_FORMAT_OPERATING_SYSTEM) {
-			rc = snprintf(&append_data->output[*append_data->output_length],
-				      (append_data->buffer_size - *append_data->output_length),
-				      "%s%s", (*append_data->prior_output == true ? " " : ""),
-				      CONFIG_CUSTOM_OS_NAME_VALUE);
+			int_rc = snprintf(&append_data->output[*append_data->output_length],
+					  (append_data->buffer_size - *append_data->output_length),
+					  "%s%s", (*append_data->prior_output == true ? " " : ""),
+					  CONFIG_CUSTOM_OS_NAME_VALUE);
 
-			if (rc < 0 ||
-			    rc >= (append_data->buffer_size - *append_data->output_length)) {
+			if (int_rc < 0 ||
+			    int_rc >= (append_data->buffer_size - *append_data->output_length)) {
 				*abort_more = true;
-				return -1;
+				*rc = -1;
+				return MGMT_CB_ERROR_RC;
 			}
 
-			*append_data->output_length += (uint16_t)rc;
+			*append_data->output_length += (uint16_t)int_rc;
 			*append_data->prior_output = true;
 			*append_data->format_bitmask &= ~OS_MGMT_INFO_FORMAT_OPERATING_SYSTEM;
 		}
 	}
 
-	return MGMT_ERR_EOK;
+	return MGMT_CB_OK;
 }
 
 static struct mgmt_callback custom_os_check_callback = {
@@ -166,8 +170,11 @@ static struct mgmt_callback custom_os_append_callback = {
 	.event_id = MGMT_EVT_OP_OS_MGMT_INFO_APPEND,
 };
 
-static int32_t os_mgmt_info_custom_cmd_callback(uint32_t event, int32_t rc, bool *abort_more,
-						void *data, size_t data_size)
+static enum mgmt_cb_return os_mgmt_info_custom_cmd_callback(uint32_t event,
+							    enum mgmt_cb_return prev_status,
+							    int32_t *rc, uint16_t *group,
+							    bool *abort_more, void *data,
+							    size_t data_size)
 {
 	if (event == MGMT_EVT_OP_OS_MGMT_INFO_CHECK) {
 		struct os_mgmt_info_check *check_data = (struct os_mgmt_info_check *)data;
@@ -182,23 +189,24 @@ static int32_t os_mgmt_info_custom_cmd_callback(uint32_t event, int32_t rc, bool
 			++i;
 		}
 	} else if (event == MGMT_EVT_OP_OS_MGMT_INFO_APPEND) {
-		int rc;
+		int int_rc;
 		struct os_mgmt_info_append *append_data = (struct os_mgmt_info_append *)data;
 
 		if (append_data->all_format_specified ||
 		    (*append_data->format_bitmask & QUERY_TEST_CMD_BITMASK)) {
-			rc = snprintf(&append_data->output[*append_data->output_length],
-				      (append_data->buffer_size - *append_data->output_length),
-				      "%sMagic Output for Test",
-				      (*append_data->prior_output == true ? " " : ""));
+			int_rc = snprintf(&append_data->output[*append_data->output_length],
+					  (append_data->buffer_size - *append_data->output_length),
+					  "%sMagic Output for Test",
+					  (*append_data->prior_output == true ? " " : ""));
 
-			if (rc < 0 ||
-			    rc >= (append_data->buffer_size - *append_data->output_length)) {
+			if (int_rc < 0 ||
+			    int_rc >= (append_data->buffer_size - *append_data->output_length)) {
 				*abort_more = true;
-				return -1;
+				*rc = -1;
+				return MGMT_CB_ERROR_RC;
 			}
 
-			*append_data->output_length += (uint16_t)rc;
+			*append_data->output_length += (uint16_t)int_rc;
 			*append_data->prior_output = true;
 			*append_data->format_bitmask &= ~QUERY_TEST_CMD_BITMASK;
 		}
@@ -297,7 +305,7 @@ ZTEST(os_mgmt_info, test_info_2_kernel_name)
 	size_t decoded = 0;
 
 	struct zcbor_map_decode_key_val output_decode[] = {
-		ZCBOR_MAP_DECODE_KEY_VAL(output, zcbor_tstr_decode, &output),
+		ZCBOR_MAP_DECODE_KEY_DECODER("output", zcbor_tstr_decode, &output),
 	};
 
 	memset(buffer, 0, sizeof(buffer));
@@ -358,7 +366,7 @@ ZTEST(os_mgmt_info, test_info_3_node_name)
 	size_t decoded = 0;
 
 	struct zcbor_map_decode_key_val output_decode[] = {
-		ZCBOR_MAP_DECODE_KEY_VAL(output, zcbor_tstr_decode, &output),
+		ZCBOR_MAP_DECODE_KEY_DECODER("output", zcbor_tstr_decode, &output),
 	};
 
 	memset(buffer, 0, sizeof(buffer));
@@ -419,7 +427,7 @@ ZTEST(os_mgmt_info, test_info_4_kernel_release)
 	size_t decoded = 0;
 
 	struct zcbor_map_decode_key_val output_decode[] = {
-		ZCBOR_MAP_DECODE_KEY_VAL(output, zcbor_tstr_decode, &output),
+		ZCBOR_MAP_DECODE_KEY_DECODER("output", zcbor_tstr_decode, &output),
 	};
 
 	memset(buffer, 0, sizeof(buffer));
@@ -481,7 +489,7 @@ ZTEST(os_mgmt_info, test_info_5_kernel_version)
 	size_t decoded = 0;
 
 	struct zcbor_map_decode_key_val output_decode[] = {
-		ZCBOR_MAP_DECODE_KEY_VAL(output, zcbor_tstr_decode, &output),
+		ZCBOR_MAP_DECODE_KEY_DECODER("output", zcbor_tstr_decode, &output),
 	};
 
 	memset(buffer, 0, sizeof(buffer));
@@ -543,7 +551,7 @@ ZTEST(os_mgmt_info, test_info_6_machine)
 	size_t decoded = 0;
 
 	struct zcbor_map_decode_key_val output_decode[] = {
-		ZCBOR_MAP_DECODE_KEY_VAL(output, zcbor_tstr_decode, &output),
+		ZCBOR_MAP_DECODE_KEY_DECODER("output", zcbor_tstr_decode, &output),
 	};
 
 	memset(buffer, 0, sizeof(buffer));
@@ -604,7 +612,7 @@ ZTEST(os_mgmt_info, test_info_7_processor)
 	size_t decoded = 0;
 
 	struct zcbor_map_decode_key_val output_decode[] = {
-		ZCBOR_MAP_DECODE_KEY_VAL(output, zcbor_tstr_decode, &output),
+		ZCBOR_MAP_DECODE_KEY_DECODER("output", zcbor_tstr_decode, &output),
 	};
 
 	memset(buffer, 0, sizeof(buffer));
@@ -665,7 +673,7 @@ ZTEST(os_mgmt_info, test_info_8_platform)
 	size_t decoded = 0;
 
 	struct zcbor_map_decode_key_val output_decode[] = {
-		ZCBOR_MAP_DECODE_KEY_VAL(output, zcbor_tstr_decode, &output),
+		ZCBOR_MAP_DECODE_KEY_DECODER("output", zcbor_tstr_decode, &output),
 	};
 
 	memset(buffer, 0, sizeof(buffer));
@@ -737,7 +745,7 @@ ZTEST(os_mgmt_info, test_info_9_os)
 	size_t decoded = 0;
 
 	struct zcbor_map_decode_key_val output_decode[] = {
-		ZCBOR_MAP_DECODE_KEY_VAL(output, zcbor_tstr_decode, &output),
+		ZCBOR_MAP_DECODE_KEY_DECODER("output", zcbor_tstr_decode, &output),
 	};
 
 	memset(buffer, 0, sizeof(buffer));
@@ -798,7 +806,7 @@ ZTEST(os_mgmt_info, test_info_10_all)
 	size_t decoded = 0;
 
 	struct zcbor_map_decode_key_val output_decode[] = {
-		ZCBOR_MAP_DECODE_KEY_VAL(output, zcbor_tstr_decode, &output),
+		ZCBOR_MAP_DECODE_KEY_DECODER("output", zcbor_tstr_decode, &output),
 	};
 
 	memset(buffer, 0, sizeof(buffer));
@@ -871,7 +879,7 @@ ZTEST(os_mgmt_info, test_info_11_multi_1)
 	size_t decoded = 0;
 
 	struct zcbor_map_decode_key_val output_decode[] = {
-		ZCBOR_MAP_DECODE_KEY_VAL(output, zcbor_tstr_decode, &output),
+		ZCBOR_MAP_DECODE_KEY_DECODER("output", zcbor_tstr_decode, &output),
 	};
 
 	memset(buffer, 0, sizeof(buffer));
@@ -936,7 +944,7 @@ ZTEST(os_mgmt_info, test_info_12_multi_2)
 	size_t decoded = 0;
 
 	struct zcbor_map_decode_key_val output_decode[] = {
-		ZCBOR_MAP_DECODE_KEY_VAL(output, zcbor_tstr_decode, &output),
+		ZCBOR_MAP_DECODE_KEY_DECODER("output", zcbor_tstr_decode, &output),
 	};
 
 	memset(buffer, 0, sizeof(buffer));
@@ -1004,11 +1012,11 @@ ZTEST(os_mgmt_info, test_info_13_invalid_1)
 	int32_t rc;
 
 	struct zcbor_map_decode_key_val output_decode[] = {
-		ZCBOR_MAP_DECODE_KEY_VAL(output, zcbor_tstr_decode, &output),
+		ZCBOR_MAP_DECODE_KEY_DECODER("output", zcbor_tstr_decode, &output),
 	};
 
 	struct zcbor_map_decode_key_val error_decode[] = {
-		ZCBOR_MAP_DECODE_KEY_VAL(rc, zcbor_int32_decode, &rc),
+		ZCBOR_MAP_DECODE_KEY_DECODER("rc", zcbor_int32_decode, &rc),
 	};
 
 	memset(buffer, 0, sizeof(buffer));
@@ -1075,11 +1083,11 @@ ZTEST(os_mgmt_info, test_info_14_invalid_2)
 	int32_t rc;
 
 	struct zcbor_map_decode_key_val output_decode[] = {
-		ZCBOR_MAP_DECODE_KEY_VAL(output, zcbor_tstr_decode, &output),
+		ZCBOR_MAP_DECODE_KEY_DECODER("output", zcbor_tstr_decode, &output),
 	};
 
 	struct zcbor_map_decode_key_val error_decode[] = {
-		ZCBOR_MAP_DECODE_KEY_VAL(rc, zcbor_int32_decode, &rc),
+		ZCBOR_MAP_DECODE_KEY_DECODER("rc", zcbor_int32_decode, &rc),
 	};
 
 	memset(buffer, 0, sizeof(buffer));
@@ -1158,7 +1166,7 @@ ZTEST(os_mgmt_info_custom_os, test_info_os_custom)
 	size_t decoded = 0;
 
 	struct zcbor_map_decode_key_val output_decode[] = {
-		ZCBOR_MAP_DECODE_KEY_VAL(output, zcbor_tstr_decode, &output),
+		ZCBOR_MAP_DECODE_KEY_DECODER("output", zcbor_tstr_decode, &output),
 	};
 
 	memset(buffer, 0, sizeof(buffer));
@@ -1219,7 +1227,7 @@ ZTEST(os_mgmt_info_custom_os_disabled, test_info_os_custom_disabled)
 	size_t decoded = 0;
 
 	struct zcbor_map_decode_key_val output_decode[] = {
-		ZCBOR_MAP_DECODE_KEY_VAL(output, zcbor_tstr_decode, &output),
+		ZCBOR_MAP_DECODE_KEY_DECODER("output", zcbor_tstr_decode, &output),
 	};
 
 	memset(buffer, 0, sizeof(buffer));
@@ -1292,7 +1300,7 @@ ZTEST(os_mgmt_info_custom_cmd, test_info_cmd_custom)
 	size_t decoded = 0;
 
 	struct zcbor_map_decode_key_val output_decode[] = {
-		ZCBOR_MAP_DECODE_KEY_VAL(output, zcbor_tstr_decode, &output),
+		ZCBOR_MAP_DECODE_KEY_DECODER("output", zcbor_tstr_decode, &output),
 	};
 
 	memset(buffer, 0, sizeof(buffer));
@@ -1354,11 +1362,11 @@ ZTEST(os_mgmt_info_custom_cmd_disabled, test_info_cmd_custom_disabled)
 	int32_t rc;
 
 	struct zcbor_map_decode_key_val output_decode[] = {
-		ZCBOR_MAP_DECODE_KEY_VAL(output, zcbor_tstr_decode, &output),
+		ZCBOR_MAP_DECODE_KEY_DECODER("output", zcbor_tstr_decode, &output),
 	};
 
 	struct zcbor_map_decode_key_val error_decode[] = {
-		ZCBOR_MAP_DECODE_KEY_VAL(rc, zcbor_int32_decode, &rc),
+		ZCBOR_MAP_DECODE_KEY_DECODER("rc", zcbor_int32_decode, &rc),
 	};
 
 	memset(buffer, 0, sizeof(buffer));
@@ -1423,11 +1431,11 @@ ZTEST(os_mgmt_info_custom_cmd_disabled_verify, test_info_cmd_custom_disabled)
 	int32_t rc;
 
 	struct zcbor_map_decode_key_val output_decode[] = {
-		ZCBOR_MAP_DECODE_KEY_VAL(output, zcbor_tstr_decode, &output),
+		ZCBOR_MAP_DECODE_KEY_DECODER("output", zcbor_tstr_decode, &output),
 	};
 
 	struct zcbor_map_decode_key_val error_decode[] = {
-		ZCBOR_MAP_DECODE_KEY_VAL(rc, zcbor_int32_decode, &rc),
+		ZCBOR_MAP_DECODE_KEY_DECODER("rc", zcbor_int32_decode, &rc),
 	};
 
 	memset(buffer, 0, sizeof(buffer));
