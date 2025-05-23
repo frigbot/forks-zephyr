@@ -93,7 +93,11 @@ static int smp_uart_tx_pkt(struct net_buf *nb)
 	return rc;
 }
 
+#if IS_ENABLED(CONFIG_FRIGBOT_BLE)
+int ble_uart_init(void) 
+#else
 static int smp_uart_init(void)
+#endif
 {
 	int rc;
 
@@ -114,4 +118,6 @@ static int smp_uart_init(void)
 	return rc;
 }
 
+#if !IS_ENABLED(CONFIG_FRIGBOT_BLE)
 SYS_INIT(smp_uart_init, APPLICATION, CONFIG_APPLICATION_INIT_PRIORITY);
+#endif

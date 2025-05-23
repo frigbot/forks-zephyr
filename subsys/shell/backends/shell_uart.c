@@ -181,10 +181,31 @@ static void uart_callback(const struct device *dev, void *user_data)
 }
 #endif /* CONFIG_SHELL_BACKEND_SERIAL_INTERRUPT_DRIVEN */
 
+//@@@@@WK
+#if IS_ENABLED(CONFIG_FRIGBOT_BLE)
+const struct shell_uart *sh_uart_global = NULL;
+void shell_uart_irq_reinit(void)
+{
+#ifdef CONFIG_SHELL_BACKEND_SERIAL_INTERRUPT_DRIVEN
+	if(sh_uart_global != NULL)	
+	{
+		const struct device *dev = sh_uart_global->ctrl_blk->dev;
+		uart_irq_rx_disable(dev);
+
+		uart_irq_callback_user_data_set(dev, uart_callback, (void *)sh_uart_global);		
+	}
+#endif	
+}
+#endif
+
 static void uart_irq_init(const struct shell_uart *sh_uart)
 {
 #ifdef CONFIG_SHELL_BACKEND_SERIAL_INTERRUPT_DRIVEN
 	const struct device *dev = sh_uart->ctrl_blk->dev;
+
+#if IS_ENABLED(CONFIG_FRIGBOT_BLE)
+	sh_uart_global = sh_uart;
+#endif
 
 	ring_buf_reset(sh_uart->tx_ringbuf);
 	ring_buf_reset(sh_uart->rx_ringbuf);
